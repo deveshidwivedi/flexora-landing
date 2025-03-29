@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
+import PotionBlast from "./PotionBlast";
 import "./GameLanding.css";
 
 const games = [
     {
-        name: "Bubble Shooter",
-        description: "Pop bubbles with precise movements!",
+        name: "Potion Blast",
+        description: "Pop potions with precise movements!",
         image: "bubble.png",
 
     }
@@ -13,6 +14,7 @@ const games = [
 
 export default function Landing() {
     const [selectedGame, setSelectedGame] = useState(null);
+    const [gameStarted, setGameStarted] = useState(false); 
 
     const gameVariants = {
         hidden: { opacity: 0, scale: 0.8 },
@@ -26,6 +28,24 @@ export default function Landing() {
             }
         }
     };
+        // Start the selected game
+        const startGame = () => {
+            setGameStarted(true);
+        };
+    
+        // Return to the landing page
+        const exitGame = () => {
+            setGameStarted(false);
+            setSelectedGame(null);
+        };
+            // Render the game if it's started
+    if (gameStarted) {
+        return (
+            <div className="game-container">
+                <PotionBlast onExit={exitGame} /> {/* Pass exit handler */}
+            </div>
+        );
+    }
 
     return (
         <div className="container">
@@ -79,7 +99,7 @@ export default function Landing() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     whileHover={{ scale: 1.1 }}
-                    onClick={() => alert(`Starting ${selectedGame}`)}
+                    onClick={startGame}
                 >
                     Start {selectedGame}
                 </motion.button>
