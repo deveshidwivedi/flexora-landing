@@ -10,6 +10,7 @@
     "framer-motion": "^12.6.2",
     "howler": "^2.2.4",
     "lucide-react": "^0.484.0",
+    "phaser": "^3.88.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-parallax-tilt": "^1.7.287",
