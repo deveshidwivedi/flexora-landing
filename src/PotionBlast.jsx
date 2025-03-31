@@ -96,12 +96,18 @@ const PotionBlast = ({ onExit }) => {
     }
 
     function createInstructions() {
-      // Panel background with better styling
+      const panelWidth = 600;
+      const panelHeight = 600;
+      const panelX = 100;
+      const panelY = 50;
+
+      // Panel background with no transparency and highest depth
       const panelBg = this.add.graphics();
-      panelBg.fillStyle(0x111111, 0.95); // Darker semi-transparent background
-      panelBg.fillRoundedRect(100, 50, 600, 600, 16);
+      panelBg.fillStyle(0x111111, 1); // Fully opaque black
+      panelBg.fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 16);
       panelBg.lineStyle(3, 0x4a90e2, 1); // Blue border
-      panelBg.strokeRoundedRect(100, 50, 600, 600, 16);
+      panelBg.strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 16);
+      panelBg.setDepth(100); // Ensure it is on top
       instructionElements.push(panelBg);
 
       // Instructions title
@@ -109,90 +115,86 @@ const PotionBlast = ({ onExit }) => {
         .text(400, 100, "HOW TO PLAY", {
           fontSize: "32px",
           fontFamily: "Arial Black",
-          color: "#4a90e2", // Blue color
+          color: "#4a90e2",
           stroke: "#000",
           strokeThickness: 3,
-          shadow: {
-            offsetX: 2,
-            offsetY: 2,
-            color: "#000",
-            blur: 3,
-            stroke: true,
-          },
+          shadow: { offsetX: 2, offsetY: 2, color: "#000", blur: 3, stroke: true },
         })
         .setOrigin(0.5)
-        .setDepth(21);
+        .setDepth(101); // On top of background
       instructionElements.push(title);
 
-      // Instructions text with better formatting
+      // Instructions text with improved formatting
       instructionsText = this.add
         .text(
           400,
           350,
-          `1) Selecting a Potion Color: Users select the potion colour by touching their thumb to one of their four fingers:
-●
-Thumb + Index Finger: Selects the Green potion.
-●
-Thumb + Middle Finger: Selects the Yellow potion.
-●
-Thumb + Ring Finger: Selects the Pink potion.
-●
-Thumb + Little Finger: Selects the Blue potion.
-●
-Upon selection, the wand changes to the corresponding colour, confirming the choice visually.
-2) Aiming the Wand: Users rotate their wrist to control the direction of the wand on the screen, allowing precise aiming at the desired potion bottle.
-3) Shooting the Potion Bottle: Users perform a finger flexion movement by folding their fingers inward to cast the spell. This action mimics the motion of casting a spell, firing the wand to hit the aimed potion bottle.
-
-Clear all bubbles before they reach the bottom to win!`,
+          `1) Selecting a Potion Color:  
+      - Thumb + Index Finger: Selects the Green potion.  
+      - Thumb + Middle Finger: Selects the Yellow potion.  
+      - Thumb + Ring Finger: Selects the Pink potion.  
+      - Thumb + Little Finger: Selects the Blue potion.  
+      The wand changes to the selected color for confirmation.
+    
+    2) Aiming the Wand:  
+      Rotate your wrist to aim the wand on the screen.
+    
+    3) Shooting the Potion Bottle:  
+      Perform a finger flexion movement (fold fingers inward) to cast a spell.
+    
+    🪄 Clear all bubbles before they reach the bottom to win!`,
           {
-            fontSize: "14px",
+            fontSize: "16px",
             fontFamily: "Arial",
             color: "#ffffff",
             align: "left",
-            lineSpacing: 3, // Increased line spacing
-            wordWrap: { width: 500 },
+            lineSpacing: 6,
+            wordWrap: { width: 550 },
             stroke: "#000",
-            strokeThickness: 1,
+            strokeThickness: 2,
           }
         )
         .setOrigin(0.5)
-        .setDepth(21);
+        .setDepth(101); // On top of background
       instructionElements.push(instructionsText);
 
-      // Enhanced "GOT IT" button
+      // "GOT IT" button
+      const buttonWidth = 160;
+      const buttonHeight = 50;
+      const buttonColor = 0x4a90e2;
+      const buttonX = 400 - buttonWidth / 2;
+      const buttonY = 600 - buttonHeight / 2;
+
+      // Button background
+      const closeButtonBg = this.add.graphics();
+      closeButtonBg.fillStyle(buttonColor, 1);
+      closeButtonBg.fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
+      closeButtonBg.setDepth(102); // Ensure button is above text
+      instructionElements.push(closeButtonBg);
+
+      // Button text
       closeButton = this.add
         .text(400, 600, "GOT IT", {
           fontSize: "24px",
           fontFamily: "Arial Black",
           color: "#ffffff",
-          backgroundColor: "#4a90e2", // Blue background
-          padding: {
-            x: 20, // More horizontal padding
-            y: 10, // More vertical padding
-          },
           stroke: "#000",
           strokeThickness: 2,
-          shadow: {
-            offsetX: 2,
-            offsetY: 2,
-            color: "#000",
-            blur: 3,
-            stroke: true,
-          },
+          shadow: { offsetX: 2, offsetY: 2, color: "#000", blur: 3, stroke: true },
         })
         .setOrigin(0.5)
-        .setDepth(21)
+        .setDepth(103) // Ensure button text is on top
         .setInteractive({ useHandCursor: true });
 
       // Button hover effects
       closeButton.on("pointerover", () => {
         closeButton.setScale(1.1);
-        closeButton.setStyle({ fill: "#ffeb3b" }); // Yellow text on hover
+        closeButtonBg.clear().fillStyle(0xffeb3b, 1).fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
       });
 
       closeButton.on("pointerout", () => {
         closeButton.setScale(1);
-        closeButton.setStyle({ fill: "#ffffff" }); // White text normally
+        closeButtonBg.clear().fillStyle(buttonColor, 1).fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
       });
 
       closeButton.on("pointerdown", () => {
@@ -201,10 +203,8 @@ Clear all bubbles before they reach the bottom to win!`,
 
       instructionElements.push(closeButton);
 
-      // Hide initially if needed
-      if (!shouldShowInstructions) {
-        instructionElements.forEach((el) => el.setVisible(false));
-      }
+      // Force all elements to the front
+      instructionElements.forEach((el) => el.setDepth(105).setVisible(true));
     }
 
     function hideInstructions() {
