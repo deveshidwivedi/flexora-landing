@@ -1,9 +1,76 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Phaser from "phaser";
 
 const PotionBlast = ({ onExit }) => {
   const gameContainer = useRef(null);
   const gameInstance = useRef(null);
+  const [ws, setWs] = useState(null);
+  // Flex sensor thresholds (adjust based on your glove)
+  const FLEX_THRESHOLD = 2500; // Value when fingers are flexed
+  const TOUCH_THRESHOLD = 30; // Lower = more sensitive touch detection
+
+  // Accelerometer sensitivity
+  const ACCEL_SENSITIVITY = 5;
+
+  useEffect(() => {
+    const connect = () => {
+      const socket = new WebSocket("ws://localhost:8080");
+
+      socket.onopen = () => {
+        console.log("Connected to bridge");
+        setWs(socket);
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          processSensorData(data);
+        } catch (err) {
+          console.error("Data parsing error:", err);
+        }
+      };
+
+      socket.onclose = () => {
+        console.log("Reconnecting in 2 seconds...");
+        setTimeout(connect, 2000);
+      };
+
+      socket.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
+    };
+
+    connect();
+
+    return () => {
+      if (ws) ws.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    const ws = new WebSocket("ws://localhost:8080");
+
+    ws.onopen = () => {
+      console.log("Connected to WebSocket bridge");
+    };
+
+    ws.onmessage = (event) => {
+      const sensorData = JSON.parse(event.data);
+      // Process sensor data here (see next steps)
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, []);
 
   useEffect(() => {
     // Game configuration
@@ -73,7 +140,7 @@ const PotionBlast = ({ onExit }) => {
       createShooter.call(this);
       addScoreText.call(this);
       createBubbles.call(this);
-      setupControls.call(this);
+      // setupControls.call(this);
       createControls.call(this);
       createInstructions.call(this);
 
@@ -118,7 +185,13 @@ const PotionBlast = ({ onExit }) => {
           color: "#4a90e2",
           stroke: "#000",
           strokeThickness: 3,
-          shadow: { offsetX: 2, offsetY: 2, color: "#000", blur: 3, stroke: true },
+          shadow: {
+            offsetX: 2,
+            offsetY: 2,
+            color: "#000",
+            blur: 3,
+            stroke: true,
+          },
         })
         .setOrigin(0.5)
         .setDepth(101); // On top of background
@@ -168,7 +241,13 @@ const PotionBlast = ({ onExit }) => {
       // Button background
       const closeButtonBg = this.add.graphics();
       closeButtonBg.fillStyle(buttonColor, 1);
-      closeButtonBg.fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
+      closeButtonBg.fillRoundedRect(
+        buttonX,
+        buttonY,
+        buttonWidth,
+        buttonHeight,
+        10
+      );
       closeButtonBg.setDepth(102); // Ensure button is above text
       instructionElements.push(closeButtonBg);
 
@@ -180,7 +259,13 @@ const PotionBlast = ({ onExit }) => {
           color: "#ffffff",
           stroke: "#000",
           strokeThickness: 2,
-          shadow: { offsetX: 2, offsetY: 2, color: "#000", blur: 3, stroke: true },
+          shadow: {
+            offsetX: 2,
+            offsetY: 2,
+            color: "#000",
+            blur: 3,
+            stroke: true,
+          },
         })
         .setOrigin(0.5)
         .setDepth(103) // Ensure button text is on top
@@ -189,12 +274,18 @@ const PotionBlast = ({ onExit }) => {
       // Button hover effects
       closeButton.on("pointerover", () => {
         closeButton.setScale(1.1);
-        closeButtonBg.clear().fillStyle(0xffeb3b, 1).fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
+        closeButtonBg
+          .clear()
+          .fillStyle(0xffeb3b, 1)
+          .fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
       });
 
       closeButton.on("pointerout", () => {
         closeButton.setScale(1);
-        closeButtonBg.clear().fillStyle(buttonColor, 1).fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
+        closeButtonBg
+          .clear()
+          .fillStyle(buttonColor, 1)
+          .fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
       });
 
       closeButton.on("pointerdown", () => {
@@ -293,54 +384,85 @@ const PotionBlast = ({ onExit }) => {
       }
     }
 
-    function setupControls() {
-      this.input.keyboard.on("keydown-SPACE", () => {
-        dottedLine.clear();
-        shootBubble.call(this);
-      });
+    // Add these inside your component
+    const processSensorData = (sensorData) => {
+      const { flex, touch, accel } = sensorData;
 
-      this.input.keyboard.on("keydown-LEFT", () => {
-        changeAngle.call(this, -5);
-        drawDottedLine.call(this);
-      });
+      // 1. Handle potion color selection (thumb + finger touches)
+      if (touch[4] < 30) {
+        // Thumb (TOUCH_S5) pressed
+        if (touch[0] < 30) changeShooterColor(1); // Green (Index)
+        else if (touch[1] < 30) changeShooterColor(3); // Yellow (Middle)
+        else if (touch[2] < 30) changeShooterColor(0); // Pink (Ring)
+        else if (touch[3] < 30) changeShooterColor(2); // Blue (Little)
+      }
 
-      this.input.keyboard.on("keydown-RIGHT", () => {
-        changeAngle.call(this, 5);
-        drawDottedLine.call(this);
-      });
+      // 2. Handle shooting (finger flexion)
+      const avgFlex = (flex[0] + flex[1] + flex[2] + flex[3]) / 4;
+      if (avgFlex > 2500) {
+        // Adjust threshold based on your flex sensors
+        const strength = Phaser.Math.Clamp(avgFlex / 3000, 0.5, 1.5);
+        shootBubble(strength);
+      }
 
-      this.input.keyboard.on("keydown-ONE", () => {
-        changeShooterColor.call(this, 0);
-        drawDottedLine.call(this);
-      });
-      this.input.keyboard.on("keydown-TWO", () => {
-        changeShooterColor.call(this, 1);
-        drawDottedLine.call(this);
-      });
-      this.input.keyboard.on("keydown-THREE", () => {
-        changeShooterColor.call(this, 2);
-        drawDottedLine.call(this);
-      });
-      this.input.keyboard.on("keydown-FOUR", () => {
-        changeShooterColor.call(this, 3);
-        drawDottedLine.call(this);
-      });
+      // 3. Handle aiming (accelerometer)
+      const angleChange = accel[0] * 5; // X-axis rotation
+      changeAngle(angleChange);
+    };
 
-      this.input.keyboard.on("keydown-UP", () => {
-        dottedLine.clear();
-        shootBubble.call(this, 1.5);
-      });
+    // Update your WebSocket onmessage handler:
+    ws.onmessage = (event) => {
+      const sensorData = JSON.parse(event.data);
+      processSensorData(sensorData);
+    };
+    // function setupControls() {
+    //   this.input.keyboard.on("keydown-SPACE", () => {
+    //     dottedLine.clear();
+    //     shootBubble.call(this);
+    //   });
 
-      this.input.keyboard.on("keydown-DOWN", () => {
-        dottedLine.clear();
-        shootBubble.call(this, 0.7);
-      });
+    //   this.input.keyboard.on("keydown-LEFT", () => {
+    //     changeAngle.call(this, -5);
+    //     drawDottedLine.call(this);
+    //   });
 
-      // Add exit game control (ESC key)
-      this.input.keyboard.on("keydown-ESC", () => {
-        onExit();
-      });
-    }
+    //   this.input.keyboard.on("keydown-RIGHT", () => {
+    //     changeAngle.call(this, 5);
+    //     drawDottedLine.call(this);
+    //   });
+
+    //   this.input.keyboard.on("keydown-ONE", () => {
+    //     changeShooterColor.call(this, 0);
+    //     drawDottedLine.call(this);
+    //   });
+    //   this.input.keyboard.on("keydown-TWO", () => {
+    //     changeShooterColor.call(this, 1);
+    //     drawDottedLine.call(this);
+    //   });
+    //   this.input.keyboard.on("keydown-THREE", () => {
+    //     changeShooterColor.call(this, 2);
+    //     drawDottedLine.call(this);
+    //   });
+    //   this.input.keyboard.on("keydown-FOUR", () => {
+    //     changeShooterColor.call(this, 3);
+    //     drawDottedLine.call(this);
+    //   });
+
+    //   this.input.keyboard.on("keydown-UP", () => {
+    //     dottedLine.clear();
+    //     shootBubble.call(this, 1.5);
+    //   });
+
+    //   this.input.keyboard.on("keydown-DOWN", () => {
+    //     dottedLine.clear();
+    //     shootBubble.call(this, 0.7);
+    //   });
+
+    //   // Add exit game control (ESC key)
+    //   this.input.keyboard.on("keydown-ESC", () => {
+    //     onExit();
+    //   });
+    // }
 
     function drawDottedLine() {
       dottedLine.clear();
