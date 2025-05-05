@@ -5,26 +5,29 @@ const PotionBlast = ({ onExit }) => {
   const gameContainer = useRef(null);
   const gameInstance = useRef(null);
   const [ws, setWs] = useState(null);
-  // Flex sensor thresholds (adjust based on your glove)
-  const FLEX_THRESHOLD = 2500; // Value when fingers are flexed
-  const TOUCH_THRESHOLD = 30; // Lower = more sensitive touch detection
 
-  // Accelerometer sensitivity
+  // Game constants
+  const FLEX_THRESHOLD = 2500;
+  const TOUCH_THRESHOLD = 30;
   const ACCEL_SENSITIVITY = 5;
 
+  // WebSocket connection
   useEffect(() => {
     const connect = () => {
       const socket = new WebSocket("ws://localhost:8080");
 
       socket.onopen = () => {
-        console.log("Connected to bridge");
+        console.log("Connected to WebSocket bridge");
         setWs(socket);
       };
 
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          processSensorData(data);
+          if (gameInstance.current) {
+            const scene = gameInstance.current.scene.getScene('default');
+            scene.events.emit('sensorData', data);
+          }
         } catch (err) {
           console.error("Data parsing error:", err);
         }
@@ -35,40 +38,17 @@ const PotionBlast = ({ onExit }) => {
         setTimeout(connect, 2000);
       };
 
-      socket.onerror = (err) => {
-        console.error("WebSocket error:", err);
+      socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
       };
+
+      return socket;
     };
 
-    connect();
+    const socket = connect();
 
     return () => {
-      if (ws) ws.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    const ws = new WebSocket("ws://localhost:8080");
-
-    ws.onopen = () => {
-      console.log("Connected to WebSocket bridge");
-    };
-
-    ws.onmessage = (event) => {
-      const sensorData = JSON.parse(event.data);
-      // Process sensor data here (see next steps)
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-    };
-
-    return () => {
-      ws.close();
+      if (socket) socket.close();
     };
   }, []);
 
@@ -89,35 +69,17 @@ const PotionBlast = ({ onExit }) => {
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
-      },
+      }
     };
 
     // Game variables
-    const bubbleSize = 35;
-    const speed = 600;
-    const colors = ["pink", "green", "blue", "yellow"];
-    const colorNames = ["Pink", "Green", "Blue", "Yellow"];
-    const rows = 7;
-    const cols = 15;
-    let score = 0;
-    let gameOver = false;
-    let gameWon = false;
-    let bubbles;
-    let shooter;
-    let shooterColor;
-    let angle = 0;
-    let dottedLine;
-    let scoreText;
-    let shooterColorText;
-    let cheerMessage;
-    let shooterBase;
-    let instructionsButton;
-    let instructionsText;
-    let closeButton;
+    let bubbles, shooter, shooterColor, angle, dottedLine;
+    let scoreText, shooterColorText, cheerMessage, shooterBase;
+    let instructionsButton, instructionsText, closeButton;
     let shouldShowInstructions = true;
     let instructionElements = [];
 
-    // Phaser scene functions
+    // Game scene functions
     function preload() {
       this.load.image("pink", "assets/pink_potion.png");
       this.load.image("green", "assets/green_potion.png");
@@ -132,18 +94,25 @@ const PotionBlast = ({ onExit }) => {
     }
 
     function create() {
-      this.physics.world.setBounds(0, 0, 600, 600);
-      bubbles = this.physics.add.group();
+      // Game state
+      const bubbleSize = 35;
+      const colors = ["pink", "green", "blue", "yellow"];
+      const colorNames = ["Pink", "Green", "Blue", "Yellow"];
       angle = 0;
 
+      // Physics setup
+      this.physics.world.setBounds(0, 0, 600, 600);
+      bubbles = this.physics.add.group();
+
+      // Create game elements
       createBottomPanel.call(this);
       createShooter.call(this);
       addScoreText.call(this);
       createBubbles.call(this);
-      // setupControls.call(this);
       createControls.call(this);
       createInstructions.call(this);
 
+      // Event for adding new rows
       this.time.addEvent({
         delay: 15000,
         callback: addNewRow,
@@ -151,7 +120,11 @@ const PotionBlast = ({ onExit }) => {
         loop: true,
       });
 
+      // Dotted line for aiming
       dottedLine = this.add.graphics();
+
+      // Listen for sensor data
+      this.events.on('sensorData', processSensorData);
     }
 
     function update() {
@@ -162,206 +135,32 @@ const PotionBlast = ({ onExit }) => {
       }
     }
 
-    function createInstructions() {
-      const panelWidth = 600;
-      const panelHeight = 600;
-      const panelX = 100;
-      const panelY = 50;
+    function processSensorData(data) {
+      const { flex, touch, accel } = data;
 
-      // Panel background with no transparency and highest depth
-      const panelBg = this.add.graphics();
-      panelBg.fillStyle(0x111111, 1); // Fully opaque black
-      panelBg.fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 16);
-      panelBg.lineStyle(3, 0x4a90e2, 1); // Blue border
-      panelBg.strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 16);
-      panelBg.setDepth(100); // Ensure it is on top
-      instructionElements.push(panelBg);
+      // 1. Handle potion color selection
+      if (touch[4] < TOUCH_THRESHOLD) { // Thumb pressed
+        if (touch[0] < TOUCH_THRESHOLD) changeShooterColor.call(this, 1);    // Green
+        else if (touch[1] < TOUCH_THRESHOLD) changeShooterColor.call(this, 3); // Yellow
+        else if (touch[2] < TOUCH_THRESHOLD) changeShooterColor.call(this, 0); // Pink
+        else if (touch[3] < TOUCH_THRESHOLD) changeShooterColor.call(this, 2); // Blue
+      }
 
-      // Instructions title
-      const title = this.add
-        .text(400, 100, "HOW TO PLAY", {
-          fontSize: "32px",
-          fontFamily: "Arial Black",
-          color: "#4a90e2",
-          stroke: "#000",
-          strokeThickness: 3,
-          shadow: {
-            offsetX: 2,
-            offsetY: 2,
-            color: "#000",
-            blur: 3,
-            stroke: true,
-          },
-        })
-        .setOrigin(0.5)
-        .setDepth(101); // On top of background
-      instructionElements.push(title);
+      // 2. Handle shooting
+      const avgFlex = (flex[0] + flex[1] + flex[2] + flex[3]) / 4;
+      if (avgFlex > FLEX_THRESHOLD) {
+        const strength = Phaser.Math.Clamp(avgFlex / 3000, 0.5, 1.5);
+        shootBubble.call(this, strength);
+      }
 
-      // Instructions text with improved formatting
-      instructionsText = this.add
-        .text(
-          400,
-          350,
-          `1) Selecting a Potion Color:  
-      - Thumb + Index Finger: Selects the Green potion.  
-      - Thumb + Middle Finger: Selects the Yellow potion.  
-      - Thumb + Ring Finger: Selects the Pink potion.  
-      - Thumb + Little Finger: Selects the Blue potion.  
-      The wand changes to the selected color for confirmation.
-    
-    2) Aiming the Wand:  
-      Rotate your wrist to aim the wand on the screen.
-    
-    3) Shooting the Potion Bottle:  
-      Perform a finger flexion movement (fold fingers inward) to cast a spell.
-    
-    🪄 Clear all bubbles before they reach the bottom to win!`,
-          {
-            fontSize: "16px",
-            fontFamily: "Arial",
-            color: "#ffffff",
-            align: "left",
-            lineSpacing: 6,
-            wordWrap: { width: 550 },
-            stroke: "#000",
-            strokeThickness: 2,
-          }
-        )
-        .setOrigin(0.5)
-        .setDepth(101); // On top of background
-      instructionElements.push(instructionsText);
-
-      // "GOT IT" button
-      const buttonWidth = 160;
-      const buttonHeight = 50;
-      const buttonColor = 0x4a90e2;
-      const buttonX = 400 - buttonWidth / 2;
-      const buttonY = 600 - buttonHeight / 2;
-
-      // Button background
-      const closeButtonBg = this.add.graphics();
-      closeButtonBg.fillStyle(buttonColor, 1);
-      closeButtonBg.fillRoundedRect(
-        buttonX,
-        buttonY,
-        buttonWidth,
-        buttonHeight,
-        10
-      );
-      closeButtonBg.setDepth(102); // Ensure button is above text
-      instructionElements.push(closeButtonBg);
-
-      // Button text
-      closeButton = this.add
-        .text(400, 600, "GOT IT", {
-          fontSize: "24px",
-          fontFamily: "Arial Black",
-          color: "#ffffff",
-          stroke: "#000",
-          strokeThickness: 2,
-          shadow: {
-            offsetX: 2,
-            offsetY: 2,
-            color: "#000",
-            blur: 3,
-            stroke: true,
-          },
-        })
-        .setOrigin(0.5)
-        .setDepth(103) // Ensure button text is on top
-        .setInteractive({ useHandCursor: true });
-
-      // Button hover effects
-      closeButton.on("pointerover", () => {
-        closeButton.setScale(1.1);
-        closeButtonBg
-          .clear()
-          .fillStyle(0xffeb3b, 1)
-          .fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
-      });
-
-      closeButton.on("pointerout", () => {
-        closeButton.setScale(1);
-        closeButtonBg
-          .clear()
-          .fillStyle(buttonColor, 1)
-          .fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
-      });
-
-      closeButton.on("pointerdown", () => {
-        hideInstructions.call(this);
-      });
-
-      instructionElements.push(closeButton);
-
-      // Force all elements to the front
-      instructionElements.forEach((el) => el.setDepth(105).setVisible(true));
+      // 3. Handle aiming
+      const angleChange = accel[0] * ACCEL_SENSITIVITY;
+      changeAngle.call(this, angleChange);
     }
 
-    function hideInstructions() {
-      instructionElements.forEach((el) => el.setVisible(false));
-      shouldShowInstructions = false;
-      this.physics.resume();
-      this.scene.resume();
-    }
-
-    function showInstructions() {
-      instructionElements.forEach((el) => el.setVisible(true));
-      shouldShowInstructions = true;
-      this.physics.pause();
-      this.scene.pause();
-    }
-
-    function createControls() {
-      // Exit button
-      closeButton = this.add
-        .text(750, 30, "✕", {
-          fontSize: "32px",
-          color: "#FF0000",
-          backgroundColor: "#333333",
-          padding: { x: 15, y: 5 },
-          stroke: "#000000",
-          strokeThickness: 2,
-        })
-        .setDepth(100)
-        .setInteractive({ useHandCursor: true })
-        .setScrollFactor(0);
-
-      closeButton.on("pointerdown", () => {
-        onExit();
-      });
-
-      // Instructions button
-      instructionsButton = this.add
-        .text(700, 30, "ℹ️", {
-          fontSize: "28px",
-          color: "#FFFFFF",
-          backgroundColor: "#333333",
-          padding: { x: 15, y: 5 },
-          stroke: "#000000",
-          strokeThickness: 2,
-        })
-        .setDepth(100)
-        .setInteractive({ useHandCursor: true })
-        .setScrollFactor(0);
-
-      instructionsButton.on("pointerdown", () => {
-        showInstructions.call(this);
-      });
-    }
-    // Game helper functions
     function createBottomPanel() {
-      this.add
-        .image(100, 600, "left_image")
-        .setScale(0.5)
-        .setOrigin(0.5)
-        .setInteractive();
-
-      this.add
-        .image(500, 600, "right_image")
-        .setScale(0.5)
-        .setOrigin(0.5)
-        .setInteractive();
+      this.add.image(100, 600, "left_image").setScale(0.5).setOrigin(0.5).setInteractive();
+      this.add.image(500, 600, "right_image").setScale(0.5).setOrigin(0.5).setInteractive();
     }
 
     function createShooter() {
@@ -372,97 +171,22 @@ const PotionBlast = ({ onExit }) => {
     }
 
     function createBubbles() {
+      const bubbleSize = 35;
+      const rows = 7;
+      const cols = 15;
+      const colors = ["pink", "green", "blue", "yellow"];
+
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          let x = c * bubbleSize * 1.1 + bubbleSize / 2;
-          let y = r * bubbleSize * 1.1 + 70;
-          let colorKey = Phaser.Utils.Array.GetRandom(colors);
-          let bubble = bubbles.create(x, y, colorKey).setScale(0.6);
+          const x = c * bubbleSize * 1.1 + bubbleSize / 2;
+          const y = r * bubbleSize * 1.1 + 70;
+          const colorKey = Phaser.Utils.Array.GetRandom(colors);
+          const bubble = bubbles.create(x, y, colorKey).setScale(0.6);
           bubble.color = colorKey;
           bubble.body.setImmovable(true);
         }
       }
     }
-
-    // Add these inside your component
-    const processSensorData = (sensorData) => {
-      const { flex, touch, accel } = sensorData;
-
-      // 1. Handle potion color selection (thumb + finger touches)
-      if (touch[4] < 30) {
-        // Thumb (TOUCH_S5) pressed
-        if (touch[0] < 30) changeShooterColor(1); // Green (Index)
-        else if (touch[1] < 30) changeShooterColor(3); // Yellow (Middle)
-        else if (touch[2] < 30) changeShooterColor(0); // Pink (Ring)
-        else if (touch[3] < 30) changeShooterColor(2); // Blue (Little)
-      }
-
-      // 2. Handle shooting (finger flexion)
-      const avgFlex = (flex[0] + flex[1] + flex[2] + flex[3]) / 4;
-      if (avgFlex > 2500) {
-        // Adjust threshold based on your flex sensors
-        const strength = Phaser.Math.Clamp(avgFlex / 3000, 0.5, 1.5);
-        shootBubble(strength);
-      }
-
-      // 3. Handle aiming (accelerometer)
-      const angleChange = accel[0] * 5; // X-axis rotation
-      changeAngle(angleChange);
-    };
-
-    // Update your WebSocket onmessage handler:
-    ws.onmessage = (event) => {
-      const sensorData = JSON.parse(event.data);
-      processSensorData(sensorData);
-    };
-    // function setupControls() {
-    //   this.input.keyboard.on("keydown-SPACE", () => {
-    //     dottedLine.clear();
-    //     shootBubble.call(this);
-    //   });
-
-    //   this.input.keyboard.on("keydown-LEFT", () => {
-    //     changeAngle.call(this, -5);
-    //     drawDottedLine.call(this);
-    //   });
-
-    //   this.input.keyboard.on("keydown-RIGHT", () => {
-    //     changeAngle.call(this, 5);
-    //     drawDottedLine.call(this);
-    //   });
-
-    //   this.input.keyboard.on("keydown-ONE", () => {
-    //     changeShooterColor.call(this, 0);
-    //     drawDottedLine.call(this);
-    //   });
-    //   this.input.keyboard.on("keydown-TWO", () => {
-    //     changeShooterColor.call(this, 1);
-    //     drawDottedLine.call(this);
-    //   });
-    //   this.input.keyboard.on("keydown-THREE", () => {
-    //     changeShooterColor.call(this, 2);
-    //     drawDottedLine.call(this);
-    //   });
-    //   this.input.keyboard.on("keydown-FOUR", () => {
-    //     changeShooterColor.call(this, 3);
-    //     drawDottedLine.call(this);
-    //   });
-
-    //   this.input.keyboard.on("keydown-UP", () => {
-    //     dottedLine.clear();
-    //     shootBubble.call(this, 1.5);
-    //   });
-
-    //   this.input.keyboard.on("keydown-DOWN", () => {
-    //     dottedLine.clear();
-    //     shootBubble.call(this, 0.7);
-    //   });
-
-    //   // Add exit game control (ESC key)
-    //   this.input.keyboard.on("keydown-ESC", () => {
-    //     onExit();
-    //   });
-    // }
 
     function drawDottedLine() {
       dottedLine.clear();
@@ -499,128 +223,85 @@ const PotionBlast = ({ onExit }) => {
     }
 
     function changeShooterColor(index) {
+      const colors = ["pink", "green", "blue", "yellow"];
+      const colorNames = ["Pink", "Green", "Blue", "Yellow"];
+      
       if (index >= 0 && index < colors.length) {
         shooterColor = colors[index];
         shooter.setTexture(shooterColor + "_star");
         shooterColorText.setText(colorNames[index]);
+        drawDottedLine.call(this);
       }
-    }
-
-    function showCheerMessage() {
-      if (cheerMessage) {
-        cheerMessage.destroy();
-      }
-
-      cheerMessage = this.add.text(
-        Phaser.Math.Between(200, 400),
-        Phaser.Math.Between(200, 400),
-        Phaser.Utils.Array.GetRandom(["Nice!", "Great!", "Awesome!", "Boom!"]),
-        {
-          fontSize: "32px",
-          fill: "#ffff00",
-          fontStyle: "bold",
-          stroke: "#000",
-          strokeThickness: 4,
-        }
-      );
-
-      this.time.delayedCall(1000, () => {
-        if (cheerMessage) {
-          cheerMessage.destroy();
-          cheerMessage = null;
-        }
-      });
     }
 
     function shootBubble(impactStrength = 1.0) {
-      if (gameOver || gameWon) return;
+      const speed = 600;
+      const colors = ["pink", "green", "blue", "yellow"];
+
+      if (this.gameOver || this.gameWon) return;
       dottedLine.clear();
 
       const normalizedImpact = Phaser.Math.Clamp(impactStrength, 0.5, 1.5);
-      const isStrongImpact = impactStrength > 1.2;
+      const radianAngle = Phaser.Math.DegToRad(angle - 90);
 
-      let radianAngle = Phaser.Math.DegToRad(angle - 90);
-
-      let star = this.physics.add
+      const star = this.physics.add
         .sprite(shooter.x, shooter.y, shooterColor + "_star")
         .setScale(0.6);
 
       star.color = shooterColor;
       star.impactStrength = normalizedImpact;
-      star.isStrongImpact = isStrongImpact;
       star.setVelocity(
         speed * Math.cos(radianAngle),
         speed * Math.sin(radianAngle)
       );
 
       star.body.setCollideWorldBounds(true, true, true, false);
-      star.body.onWorldBounds = true;
-
-      this.physics.world.on("worldbounds", (body) => {
-        if (body.gameObject === star) {
-          if (body.blocked.left || body.blocked.right || body.blocked.up) {
-            star.destroy();
-          }
-        }
-      });
 
       this.physics.add.collider(star, bubbles, (shotStar, targetBottle) => {
-        if (!shotStar.active) return;
+        if (!shotStar.active || shotStar.color !== targetBottle.color) return;
 
         shotStar.disableBody(true, true);
+        const burstRadius = shotStar.impactStrength * 100;
 
-        if (shotStar.color === targetBottle.color) {
-          if (shotStar.isStrongImpact) {
-            showCheerMessage.call(this);
-          }
+        const bubblesToBurst = bubbles.getChildren().filter(b => 
+          b.active && 
+          b.color === shotStar.color &&
+          Phaser.Math.Distance.Between(targetBottle.x, targetBottle.y, b.x, b.y) <= burstRadius
+        );
 
-          const burstRadius = shotStar.impactStrength * 100;
+        bubblesToBurst.forEach(b => b.disableBody(true, true));
+        this.score += bubblesToBurst.length * 2;
+        scoreText.setText("Score: " + this.score);
 
-          const bubblesToBurst = bubbles
-            .getChildren()
-            .filter(
-              (b) =>
-                b.active &&
-                b.color === shotStar.color &&
-                Phaser.Math.Distance.Between(
-                  targetBottle.x,
-                  targetBottle.y,
-                  b.x,
-                  b.y
-                ) <= burstRadius
-            );
-
-          bubblesToBurst.forEach((b) => b.disableBody(true, true));
-
-          score += bubblesToBurst.length * 2;
-          scoreText.setText("Score: " + score);
-
-          checkWinCondition.call(this);
+        if (bubbles.getChildren().filter(b => b.active).length === 0) {
+          this.gameWon = true;
+          this.add.text(200, 300, "You Won!", { fontSize: "48px", fill: "#0f0" });
         }
       });
     }
 
     function addNewRow() {
-      if (gameOver || gameWon) return;
+      const bubbleSize = 35;
+      const cols = 15;
+      const colors = ["pink", "green", "blue", "yellow"];
 
-      bubbles.getChildren().forEach((bubble) => {
+      if (this.gameOver || this.gameWon) return;
+
+      bubbles.getChildren().forEach(bubble => {
         if (bubble.active) {
           bubble.y += bubbleSize * 1.1;
           if (bubble.y >= 550) {
-            gameOver = true;
-            this.add.text(200, 300, "Game Over", {
-              fontSize: "32px",
-              fill: "#fff",
-            });
+            this.gameOver = true;
+            this.add.text(200, 300, "Game Over", { fontSize: "32px", fill: "#fff" });
           }
         }
       });
 
       for (let c = 0; c < cols; c++) {
-        let x = c * bubbleSize * 1.1 + bubbleSize / 2;
-        let y = 70;
-        let colorKey = Phaser.Utils.Array.GetRandom(colors);
-        let bubble = bubbles.create(x, y, colorKey).setScale(0.6);
+        const x = c * bubbleSize * 1.1 + bubbleSize / 2;
+        const y = 70;
+        const colorKey = Phaser.Utils.Array.GetRandom(colors);
+        const bubble = bubbles.create(x, y, colorKey).setScale(0.6);
         bubble.color = colorKey;
         bubble.body.setImmovable(true);
       }
@@ -628,64 +309,123 @@ const PotionBlast = ({ onExit }) => {
 
     function changeAngle(delta) {
       angle = Phaser.Math.Clamp(angle + delta, -90, 90);
-      let radianAngle = Phaser.Math.DegToRad(angle);
-      shooterBase.rotation = radianAngle;
+      shooterBase.rotation = Phaser.Math.DegToRad(angle);
       drawDottedLine.call(this);
     }
 
     function addScoreText() {
-      scoreText = this.add
-        .text(10, 10, "Score: 0", {
-          fontSize: "20px",
-          fontFamily: "'Arial Black', sans-serif",
-          fill: "#fff",
-          stroke: "#000000",
-          strokeThickness: 4,
-        })
-        .setDepth(10);
+      this.score = 0;
+      scoreText = this.add.text(10, 10, "Score: 0", {
+        fontSize: "20px",
+        fontFamily: "'Arial Black', sans-serif",
+        fill: "#fff",
+        stroke: "#000000",
+        strokeThickness: 4,
+      }).setDepth(10);
     }
 
     function addShooterColorText() {
-      if (shooterColorText) {
-        shooterColorText.destroy();
-      }
-
-      shooterColorText = this.add
-        .text(300, 625, "Pink", {
-          fontSize: "22px",
-          ontFamily: "'Arial Black', sans-serif",
-          fill: "#fff",
-          fontStyle: "bold",
-          stroke: "#000",
-          strokeThickness: 2,
-        })
-        .setOrigin(0.5)
-        .setDepth(4);
+      if (shooterColorText) shooterColorText.destroy();
+      shooterColorText = this.add.text(300, 625, "Pink", {
+        fontSize: "22px",
+        fontFamily: "'Arial Black', sans-serif",
+        fill: "#fff",
+        stroke: "#000",
+        strokeThickness: 2,
+      }).setOrigin(0.5).setDepth(4);
     }
 
-    function checkWinCondition() {
-      const activeBubbles = bubbles
-        .getChildren()
-        .filter((b) => b.active).length;
+    function createControls() {
+      // Exit button
+      const exitBtn = this.add.text(750, 30, "✕", {
+        fontSize: "32px",
+        color: "#FF0000",
+        backgroundColor: "#333333",
+        padding: { x: 15, y: 5 },
+        stroke: "#000000",
+        strokeThickness: 2,
+      }).setInteractive({ useHandCursor: true });
 
-      if (activeBubbles === 0 && !gameOver) {
-        gameWon = true;
-        this.add.text(200, 300, "You Won!", {
-          fontSize: "48px",
-          fill: "#0f0",
-          fontStyle: "bold",
-        });
+      exitBtn.on("pointerdown", () => {
+        onExit();
+      });
 
-        this.input.keyboard.off("keydown-SPACE");
-        this.input.keyboard.off("keydown-LEFT");
-        this.input.keyboard.off("keydown-RIGHT");
-      }
+      // Instructions button
+      const infoBtn = this.add.text(700, 30, "ℹ️", {
+        fontSize: "28px",
+        color: "#FFFFFF",
+        backgroundColor: "#333333",
+        padding: { x: 15, y: 5 },
+        stroke: "#000000",
+        strokeThickness: 2,
+      }).setInteractive({ useHandCursor: true });
+
+      infoBtn.on("pointerdown", () => {
+        showInstructions.call(this);
+      });
+    }
+
+    function createInstructions() {
+      const panelBg = this.add.graphics()
+        .fillStyle(0x111111, 1)
+        .fillRoundedRect(100, 50, 600, 600, 16)
+        .lineStyle(3, 0x4a90e2, 1)
+        .strokeRoundedRect(100, 50, 600, 600, 16);
+
+      const title = this.add.text(400, 100, "HOW TO PLAY", {
+        fontSize: "32px",
+        fontFamily: "Arial Black",
+        color: "#4a90e2",
+        stroke: "#000",
+        strokeThickness: 3,
+      }).setOrigin(0.5);
+
+      const instructions = this.add.text(400, 350, `1) Selecting a Potion Color:  
+- Thumb + Index Finger: Green potion  
+- Thumb + Middle Finger: Yellow potion  
+- Thumb + Ring Finger: Pink potion  
+- Thumb + Little Finger: Blue potion  
+
+2) Aiming: Rotate your wrist  
+3) Shooting: Flex fingers inward`, {
+        fontSize: "16px",
+        fontFamily: "Arial",
+        color: "#ffffff",
+        align: "center",
+        lineSpacing: 6,
+        wordWrap: { width: 550 },
+      }).setOrigin(0.5);
+
+      const closeBtn = this.add.text(400, 600, "GOT IT", {
+        fontSize: "24px",
+        fontFamily: "Arial Black",
+        color: "#ffffff",
+        backgroundColor: "#4a90e2",
+        padding: { x: 20, y: 10 },
+      }).setOrigin(0.5).setInteractive();
+
+      closeBtn.on("pointerdown", () => {
+        hideInstructions.call(this);
+      });
+
+      instructionElements = [panelBg, title, instructions, closeBtn];
+    }
+
+    function hideInstructions() {
+      instructionElements.forEach(el => el.destroy());
+      shouldShowInstructions = false;
+      this.physics.resume();
+    }
+
+    function showInstructions() {
+      createInstructions.call(this);
+      shouldShowInstructions = true;
+      this.physics.pause();
     }
 
     // Initialize the game
     gameInstance.current = new Phaser.Game(config);
 
-    // Cleanup function
     return () => {
       if (gameInstance.current) {
         gameInstance.current.destroy(true);
@@ -695,17 +435,14 @@ const PotionBlast = ({ onExit }) => {
   }, [onExit]);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100vh",
-        width: "100%",
-        backgroundColor: "#333",
-        overflow: "hidden",
-      }}
-    >
+    <div style={{
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      height: "100vh",
+      width: "100%",
+      backgroundColor: "#333",
+    }}>
       <div ref={gameContainer} style={{ position: "relative" }} />
     </div>
   );
